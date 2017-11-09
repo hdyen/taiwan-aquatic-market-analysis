@@ -67,7 +67,6 @@ def main():
     logging.basicConfig(level=levels[min(args.level, len(levels) - 1)])
 
     if args.iocp:
-        ''' Use IOCP event loop (Windows only) '''
         from asyncio.windows_events import ProactorEventLoop
         loop = ProactorEventLoop()
         asyncio.set_event_loop(loop)
