@@ -100,46 +100,6 @@ class Fetcher:
 
         print('{} done'.format(self.date))
 
-    def read_response(self):
-        chunk = self.sock.recv(4096)  # 4k chunk size.
-
-        f = Future()
-
-        def on_read():
-            f.set_result(None)
-            if chunk:
-                self.response += chunk
-                Task(self.read_response())
-            else:
-                self.sock.close()
-                self.parse_response()
-
-        selector.register(self.sock.fileno(), EVENT_READ, on_read)
-
-        yield f
-
-        selector.unregister(self.sock.fileno())
-
-    def connected(self):
-        url = self.url.geturl()
-        host = self.url.netloc
-
-        request = 'GET {} HTTP/1.0\r\nHost: {}\r\n\r\n'.format(url, host)
-        self.sock.send(request.encode('ascii'))
-
-        f = Future()
-
-        def on_sent():
-            f.set_result(None)
-            Task(self.read_response())
-
-        # Register the next callback.
-        selector.register(self.sock.fileno(), EVENT_READ, on_sent)
-
-        yield f
-
-        selector.unregister(self.sock.fileno())
-
     def fetch(self):
         self.sock = socket.socket()
         self.sock.setblocking(False)
@@ -159,14 +119,34 @@ class Fetcher:
 
         def on_connected():
             f.set_result(None)
-            Task(self.connected())
 
-        # Register next callback.
         selector.register(self.sock.fileno(), EVENT_WRITE, on_connected)
-
         yield f
-
         selector.unregister(self.sock.fileno())
+
+        # send HTTP request
+        url = self.url.geturl()
+        host = self.url.netloc
+
+        request = 'GET {} HTTP/1.0\r\nHost: {}\r\n\r\n'.format(url, host)
+        self.sock.send(request.encode('ascii'))
+
+        def on_readable():
+            f.set_result(self.sock.recv(4096))
+
+        while True:
+            f = Future()
+
+            selector.register(self.sock.fileno(), EVENT_READ, on_readable)
+            chunk = yield f
+            selector.unregister(self.sock.fileno())
+
+            if chunk:
+                self.response += chunk
+            else:
+                break
+
+        self.parse_response()
 
 
 if __name__ == '__main__':
