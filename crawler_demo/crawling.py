@@ -15,7 +15,7 @@ except ImportError:
     # Python 3.5.
     from asyncio import Queue
 
-import aiohttp
+import aiohttp  # Install with "pip install aiohttp".
 
 LOGGER = logging.getLogger(__name__)
 
@@ -46,18 +46,11 @@ class Crawler:
 
     This manages two sets of URLs: 'urls' and 'done'.  'urls' is a set of
     URLs seen, and 'done' is a list of FetchStatistics.
-
-
     """
-
     def __init__(self, roots,
-                 exclude=None,
-                 strict=True,  # What to crawl.
-                 max_redirect=10,
-                 max_tries=4,  # Per-url limits.
-                 max_tasks=10,
-                 *,
-                 loop=None):
+                 exclude=None, strict=True,  # What to crawl.
+                 max_redirect=10, max_tries=4,  # Per-url limits.
+                 max_tasks=10, *, loop=None):
         self.loop = loop or asyncio.get_event_loop()
         self.roots = roots
         self.exclude = exclude
@@ -65,12 +58,11 @@ class Crawler:
         self.max_redirect = max_redirect
         self.max_tries = max_tries
         self.max_tasks = max_tasks
-        self.queue = Queue(loop=self.loop)
+        self.q = Queue(loop=self.loop)
         self.seen_urls = set()
         self.done = []
         self.session = aiohttp.ClientSession(loop=self.loop)
         self.root_domains = set()
-
         for root in roots:
             parts = urllib.parse.urlparse(root)
             host, port = urllib.parse.splitport(parts.netloc)
@@ -84,10 +76,8 @@ class Crawler:
                     self.root_domains.add(host)
                 else:
                     self.root_domains.add(lenient_host(host))
-
         for root in roots:
             self.add_url(root)
-
         self.t0 = time.time()
         self.t1 = None
 
@@ -235,7 +225,7 @@ class Crawler:
                 stat, links = yield from self.parse_links(response)
                 self.record_statistic(stat)
                 for link in links.difference(self.seen_urls):
-                    self.queue.put_nowait((link, self.max_redirect))
+                    self.q.put_nowait((link, self.max_redirect))
                 self.seen_urls.update(links)
         finally:
             yield from response.release()
@@ -245,10 +235,10 @@ class Crawler:
         """Process queue items forever."""
         try:
             while True:
-                url, max_redirect = yield from self.queue.get()
+                url, max_redirect = yield from self.q.get()
                 assert url in self.seen_urls
                 yield from self.fetch(url, max_redirect)
-                self.queue.task_done()
+                self.q.task_done()
         except asyncio.CancelledError:
             pass
 
@@ -271,7 +261,7 @@ class Crawler:
             max_redirect = self.max_redirect
         LOGGER.debug('adding %r %r', url, max_redirect)
         self.seen_urls.add(url)
-        self.queue.put_nowait((url, max_redirect))
+        self.q.put_nowait((url, max_redirect))
 
     @asyncio.coroutine
     def crawl(self):
@@ -279,7 +269,7 @@ class Crawler:
         workers = [asyncio.Task(self.work(), loop=self.loop)
                    for _ in range(self.max_tasks)]
         self.t0 = time.time()
-        yield from self.queue.join()
+        yield from self.q.join()
         self.t1 = time.time()
         for w in workers:
             w.cancel()
