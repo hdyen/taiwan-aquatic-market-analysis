@@ -7,9 +7,9 @@ import json
 from datetime import datetime, timedelta
 
 DATABASE_PATH = 'tw-axxxculture-market.sqlite'
-DATABASE_TABLE = 'aquatic_trans'
-START_DATE = '2009-01-01'
-END_DATE = '2018-01-09'
+DATABASE_TABLE = 'aquatic_trans_yield_from_f'
+START_DATE = '2010-01-01'
+END_DATE = '2010-12-31'
 NUM_FETCHER = 10
 
 
@@ -24,6 +24,10 @@ class Future:
     def __init__(self):
         self.result = None
         self._callbacks = []
+
+    def __iter__(self):
+        yield self
+        return self.result
 
     def add_done_callback(self, fn):
         self._callbacks.append(fn)
@@ -121,7 +125,7 @@ class Fetcher:
             f.set_result(None)
 
         selector.register(self.sock.fileno(), EVENT_WRITE, on_connected)
-        yield f
+        yield from f
         selector.unregister(self.sock.fileno())
 
         # send HTTP request
@@ -138,7 +142,7 @@ class Fetcher:
                 f.set_result(sock.recv(4096))
 
             selector.register(sock.fileno(), EVENT_READ, on_readable)
-            chunk = yield f  # Read one chunk.
+            chunk = yield from f  # Read one chunk.
             selector.unregister(sock.fileno())
             return chunk
 
