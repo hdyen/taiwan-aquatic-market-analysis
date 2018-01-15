@@ -65,7 +65,7 @@ class Fetcher:
 
         self.url = urlparse(url)
 
-    def parse_response(self):
+    def parse(self):
         try:
             date = next(datetime_gen)
             fetcher = Fetcher(date, self.conn)
@@ -131,22 +131,29 @@ class Fetcher:
         request = 'GET {} HTTP/1.0\r\nHost: {}\r\n\r\n'.format(url, host)
         self.sock.send(request.encode('ascii'))
 
-        def on_readable():
-            f.set_result(self.sock.recv(4096))
-
-        while True:
+        def read(sock):
             f = Future()
 
-            selector.register(self.sock.fileno(), EVENT_READ, on_readable)
-            chunk = yield f
-            selector.unregister(self.sock.fileno())
+            def on_readable():
+                f.set_result(sock.recv(4096))
 
-            if chunk:
-                self.response += chunk
-            else:
-                break
+            selector.register(sock.fileno(), EVENT_READ, on_readable)
+            chunk = yield f  # Read one chunk.
+            selector.unregister(sock.fileno())
+            return chunk
 
-        self.parse_response()
+        def read_all(sock):
+            response = []
+            # Read whole response.
+            chunk = yield from read(sock)
+            while chunk:
+                response.append(chunk)
+                chunk = yield from read(sock)
+
+            return b''.join(response)
+
+        self.response = yield from read_all(self.sock)
+        self.parse()
 
 
 if __name__ == '__main__':
